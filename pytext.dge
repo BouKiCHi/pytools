@@ -1,0 +1,91 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# pyTEXT Copyright (C) 2012 by BouKiCHi
+#
+# The code is provided under the MIT License
+#
+# Please see the below URL for the detail
+# http://opensource.org/licenses/mit-license.php
+#
+
+import os
+import sys
+import pygame
+import dgtk
+import codecs
+
+import pyfiler
+
+size = 12
+
+#
+# pytext class
+#
+
+class pytext(dgtk.dgUIlist):
+
+    def set_lineno(self):
+        values=(
+            self.name,
+            self.pos.pos + self.cursor.pos,
+            self.top_step,
+            self.listlen - 1)
+        self.set_caption("%s : [ %d:%d / %d ]" % values )
+
+    def set_list(self, list, pos=0):
+        dgtk.dgUIlist.set_list(self ,list, pos)
+        self.set_lineno()
+        
+    def keydown(self, e):
+        flag = dgtk.dgUIlist.keydown(self, e)
+        self.set_lineno()
+        return flag
+
+
+def view_text(filename):
+    f = codecs.open(filename, "r", "utf-8")
+    mymsg = f.read()
+    f.close()
+    msgs = mymsg.split('\n')
+
+    ui = pytext(screen, msgs, appname="pyTEXT 1.0", cursor=False, shadow=False)
+    ui.loop()
+
+    
+def start_filer():
+    cwd = os.getcwd()
+    
+    while True:
+        ui = pyfiler.dgUIfiler(screen, cwd, "CHOOSE TEXT FILE")
+        ui.loop()
+        
+        cwd = ui.getcwd()
+        
+        if ui.result is not None:
+            view_text(ui.result)
+        else:
+            break
+
+
+if __name__=='__main__':
+    fontfile = "fonts/DroidSansFallback.ttf"
+
+    pygame.init()
+    pygame.mouse.set_visible(False)
+
+    screen = pygame.display.set_mode([320,240])
+
+    dgtk.init(screen)
+
+    dgtk.load_font("m", fontfile, size)
+    dgtk.load_font("m", dgtk.get_cjk_font(), size)
+    
+    if len(sys.argv) > 1:
+        view_text(sys.argv[1])
+    else:
+        start_filer()
+
+
+    
+
