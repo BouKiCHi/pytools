@@ -1,10 +1,17 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #
-# dgTK Copyright (C) 2012 by BouKiCHi
+# dgTK Copyright (C) 2012,2013 by BouKiCHi
 #
-# dgTK is dingoo GUI tool kik
+# dgTK is a Portable GUI ToolKik
 #
+# Version 1.0 2013-03-17
+# * Use pygame internal keyrepeat function instead of self written.
+# * Did refactoring
+# * Added drawbox function
+# * Changed default colors
+#
+
 # The code is provided under the MIT License
 #
 # Please see the below URL for the detail
@@ -33,12 +40,18 @@ UP = pygame.K_UP
 LEFT = pygame.K_LEFT
 RIGHT = pygame.K_RIGHT
 
+CANCEL = -1
+
+
 color = {
 'black':(0,0,0),
 'white':(255,255,255),
 'red':(255,0,0),
+'darkred':(64,0,0),
 'green':(0,255,0),
+'darkgreen':(0,64,0),
 'blue':(0,0,255),
+'darkblue':(0,0,64),
 'lightblue':(0,255,255),
 'purple':(255,0,255),
 'yellow':(255,255,0),
@@ -51,9 +64,10 @@ color = {
 #
 # Basic functions
 #
+
 def get_string_size(msg, name="m"):
     f = font[name]
-    return f.size( msg )
+    return f.size(msg)
 
 
 def init(screen_surface):
@@ -87,73 +101,56 @@ def load_unifonts(filename):
 
 def load_font(name, filename, size):
 
-    if os.path.exists(filename):
-        font[name]=pygame.font.Font(filename, size)
-        return True
+    fontpath = None
+
+    path = os.path.join(get_sysfont_dir(), filename)
+
+    if os.path.exists(path):
+        fontpath = path
+
+    path = os.path.join(get_localfont_dir(), filename)
+
+    if os.path.exists(path):
+        fontpath = path
+
+    path = os.path.join(get_userfont_dir(), filename)
+
+    if os.path.exists(path):
+        fontpath = path
     
+    if fontpath is not None:
+        font[name]=pygame.font.Font(fontpath, size)
+        return True
+
     return False
 
 #
 # Utilities
 #
 
-def get_appconfig(name):
-    return os.path.expanduser("~/."+name)
-    
-def get_cjk_font():
-    return "/usr/local/share/fonts/DroidSansFallback.ttf"
+def get_homefilepath(name):
+    return os.path.expanduser("~/"+name)
 
-#
-# Keyrepeat class
-#
+def get_sysfont_dir():
+    return "/usr/local/share/fonts/"
 
-class dgKeyRepeat:
-    def __init__(self, count=0, first=200, second=50):
-        self.count = count
-        self.mode = 0
-        self.first = first
-        self.second = second
-        self.key = None
-        self.e = None
-        self.nouse = False
-    
-    def nouse(self, flag):
-        self.nouse = flag
-    
-    def repeat(self):
-        if not self.nouse and self.key is not None:
-            if self.mode == 0:
-                if (self.count + self.first) < pygame.time.get_ticks():
-                    self.mode = 1
-                    self.count += self.first
-                    return self.e
-                    
-            if self.mode == 1:
-                if (self.count + self.second) < pygame.time.get_ticks():
-                    self.count += self.second
-                    return self.e
+def get_localfont_dir():
+    return os.path.expanduser("~/.fonts/")
 
-        return None
+def get_userfont_dir():
+    return "fonts/"
 
-    def keydown(self , e):
-        if self.key is None:
-            self.e = e
-            self.key = e.key
-            self.mode = 0
-            self.count = pygame.time.get_ticks()
-
-    def keyup(self, e):
-        if e.key == self.key:
-            self.count = 0
-            self.key = None
+def get_default_cjk_font():
+    return "DroidSansFallback.ttf"
 
     
 #
 # Count class
 #
+
 class dgCount:
     def __init__(self, pos=0, min=0, max=100, step=1, loop=False):
- 
+
         self.pos = pos
         self.min = min
         
@@ -169,13 +166,18 @@ class dgCount:
         self.loop = loop
     
     def set_max(self, max):
-    
+
         if max < 0:
             max = 0
+        
+        if self.pos > max:
+            self.pos = max
 
         self.max = max
 
+
     def inc(self):
+
         if self.pos < self.max:
             self.pos += 1
         else:
@@ -188,6 +190,7 @@ class dgCount:
         return False
 
     def dec(self):
+
         if self.pos > 0:
             self.pos -= 1
         else:
@@ -200,31 +203,36 @@ class dgCount:
         return False
 
     
-    def add(self, num):
-        if self.pos + num < self.max:
+    def add(self, num, max=False):
+
+        if self.pos + num <= self.max:
             self.pos += num
         else:
             if self.loop:
                 self.pos = self.pos + num - self.max
             else:
-                self.pos = self.max
+                if max:
+                    self.pos = self.max
+                return True
                             
         return False
 
     
-    def sub(self , num):
+    def sub(self, num, min=False):
 
-        if self.pos - num > 0:
+        if self.pos - num >= 0:
             self.pos -= num
         else:
             if self.loop:
                 self.pos = self.pos - num + self.max
             else:
-                self.pos = 0
+                if min:
+                    self.pos = 0
+                return True
         
         return False
     
-    def set_pos(self , pos):
+    def set_pos(self, pos):
         self.pos = pos
     
     def get_pos(self):
@@ -232,12 +240,13 @@ class dgCount:
 
 
 #
-# dgUI class ( main )
+# dgUI primitive class
 #
+
 class dgUI:
 
-
-    def __init__(self, scrn, appname="DGTK UI"):
+    def __init__(self, scrn, appname="DGTK UI", appconf="dgtk_user.cfg"):
+        
         self.scrn = scrn
         self.sw = scrn.get_width()
         self.sh = scrn.get_height()
@@ -245,45 +254,55 @@ class dgUI:
         self.title_h = 10
         self.delay_ms = 10
         self.shadow = True
-           
-        self.keyrep = dgKeyRepeat()
+        self.sysconf_name = "dgtk.cfg"
+        self.appconf_name = appconf
+        
+        pygame.key.set_repeat(200, 50)
+
         self.set_caption(appname)
         self.set_config()
 
     def set_config(self):
+
         self.conf = {}
         self.conf["color"] = {}
         
+        self.conf["color"]['select'] = color['yellow']
+        self.conf["color"]['background'] = color['darkblue']
+        self.conf["color"]['textcolor'] = color['white']
+        self.conf["color"]['shadow'] = color['darkgray']
         
-        self.conf["color"]['select'] = color['purple']
-        self.conf["color"]['background'] = color['white']
-        self.conf["color"]['textcolor'] = color['black']
-        self.conf["color"]['shadow'] = color['lightgray']
-        
-        dict = self.read_config("dgtk")
+        dict = self.read_config(self.sysconf_name)
+		
         if dict is not None:
-            self.conf = dict
+            self.conf.update(dict)
         
-        self.write_config("dgtk", self.conf)
-    
+        self.appconf = self.read_config(self.appconf_name)
+
+
     def read_config(self, name):
-        path = get_appconfig(name)
+
+        path = get_homefilepath("." + name)
+		
         if os.path.exists(path):
-            f = open(path,"r")
+
+            f = open(path, "r")
             text = f.read()
             f.close()
             dict = eval(text)
             return dict
+
         return None
         
    
     def write_config(self, name, dict):
-        path = get_appconfig(name)
+	
+        path = get_homefilepath("." + name)
         
-        f = open(path,"w")
-        pprint.pprint(dict,f)
+        f = open(path, "w")
+        pprint.pprint(dict, f)
         f.close()
-                
+
     
     def set_caption(self, name):
         self.caption = name
@@ -294,11 +313,11 @@ class dgUI:
         y = 0
         
         flags = l_chrs[0].get_flags()
-        dst = pygame.Surface((w,h), flags)
+        dst = pygame.Surface((w, h), flags)
         
         for s in l_chrs:
             w, h = s.get_size()                
-            dst.blit(s, (x,y))
+            dst.blit(s, (x, y))
             x += w
         
         return dst
@@ -352,18 +371,55 @@ class dgUI:
 
         return l_lines
 
+    def draw_box(self, x, y, w, h, c, cs = None, msg = None, name = "s"):
+        if cs:
+            rect = pygame.Rect(x+1, y+1, w, h)
+            pygame.draw.rect(self.scrn, cs, rect, 1)
+
+        rect = pygame.Rect(x, y, w, h)
+        pygame.draw.rect(self.scrn, c, rect, 1)
         
-    def draw_string(self, msg, x, y, c, cs, center=False, name="m", shadow=True):
+        
+        if msg is not None:
+            
+            s, ss = self.render_string(msg, c, cs, name=name)
+            
+            if ss:
+                self.draw_image(ss, 1+x+(w/2), 1+y+h-ss.get_height(),x_center = True)
+
+            self.draw_image(s, x+(w/2), y+h-ss.get_height(),x_center = True)
+
+
+    def draw_image(self, obj, x, y, x_center=False, y_center=False):
+
+        w,h = obj.get_size()
+        
+        if x_center:
+            x -= w / 2
+        if y_center:
+            y -= h / 2
+
+        self.scrn.blit(obj, (x, y))
+
+
+    def render_string(self, msg, c, cs=None, name="m",shadow = True):
+        shadow_surf = None
+
         f = font[name]
+
+        if shadow and cs:
+            shadow_surf = f.render(msg, True, cs)
+
+        surf = f.render(msg, True, c)
         
-        ss = None
+        return (surf,shadow_surf)
         
+        
+    def draw_string(self, msg, x, y, c, cs=None, center=False, name="m", shadow=True):
+    
         sw, sh = self.scrn.get_size()
         
-        if shadow:
-            ss = f.render(msg, True, cs)
-        
-        s = f.render(msg, True, c)
+        s, ss = self.render_string(msg, c, cs, name, shadow)
         
         if center:
             w,h = s.get_size()
@@ -371,8 +427,9 @@ class dgUI:
             x -= w / 2
             y -= h / 2
         
-        if shadow:
+        if ss:
             self.scrn.blit(ss, (x+1,y+1))
+    
         self.scrn.blit(s, (x,y))
         
         return s, ss
@@ -432,23 +489,16 @@ class dgUI:
         if e.type == pygame.QUIT:
             return True
         if e.type == pygame.KEYDOWN:
-            self.keyrep.keydown( e )
-            
             if self.keydown ( e ):
                 return True
         
         if e.type == pygame.KEYUP:
-            self.keyrep.keyup( e )
-
             if self.keyup ( e ):
                 return True
         
         return False
 
     def process( self ):
-        e = self.keyrep.repeat()
-        if e is not None:
-            self.keydown( e )
     
         if self.update:
             self.draw()
@@ -456,7 +506,6 @@ class dgUI:
             self.update = False
 
         pygame.time.delay( self.delay_ms )
-
 
     def loop( self ):
         done = False
@@ -476,18 +525,20 @@ class dgUI:
 # class dgUIChoose
 #
 class dgUIChoose( dgUI ):
+
     # init
 
     def __init__(self, scrn, msg, opts, appname="CHOOSE"):
+
         dgUI.__init__(self, scrn, appname)
         self.msg = msg
         self.opts = opts
-        self.count = dgCount(max=len(opts)-1, loop=True)
-        self.result = -1
+        self.count = dgCount(max = len(opts) - 1, loop = True)
+        self.result = CANCEL
 
     # keycheck
         
-    def keydown ( self , e ):
+    def keydown(self, e):
         self.update = True
         if e.key == SELECT:
             return True
@@ -505,7 +556,7 @@ class dgUIChoose( dgUI ):
         return False
     
                     
-    def draw( self ):
+    def draw(self):
         sw = self.sw
         sh = self.sh
         
@@ -524,7 +575,7 @@ class dgUIChoose( dgUI ):
         y = sh - (sh / 4)
 
         
-        for i in range ( l ):
+        for i in range(l):
             if self.count.pos == i:
                 self.draw_string(
                     "[%s]" % self.opts[i], x, y, csel, cs,
@@ -536,45 +587,71 @@ class dgUIChoose( dgUI ):
             
             x += w
 
+#
+# class dgUIYesNoChoose
+#
+class dgUIYesNoChoose(dgUIChoose):
+
+    def __init__(self, scrn, msg, appname="YES/NO"):
+        dgUIChoose.__init__(self, scrn, msg,["NO","YES"],appname)
+
+#
+# class dgUIOKChoose
+#
+class dgUIOKChoose(dgUIChoose):
+
+    def __init__(self, scrn, msg,appname="OK?"):
+        dgUIChoose.__init__(self, scrn, msg,["CANCEL","OK"],appname)
 
 
 #
-# class dgUIlist
+# class dgUIAlert
 #
-class dgUIlist( dgUI ):
-    def __init__( self , scrn , list , pos = 0 ,  appname = "LIST" , cursor = True , shadow = True ):
+class dgUIAlert(dgUIChoose):
+    def __init__(self, scrn, msg,appname="ALERT"):
+        dgUIChoose.__init__(self, scrn, msg,["OK"],appname)
+
+
+
+
+
+#
+# class dgUIList
+#
+class dgUIList(dgUI):
+    def __init__(self, scrn, list, pos = 0, appname = "LIST", cursor = True, shadow = True):
         self.name = appname
     
-        dgUI.__init__ ( self , scrn , appname )
+        dgUI.__init__(self, scrn, appname)
 
         self.shadow = shadow
 
         # calculates height of the font
 
-        wh = get_string_size ( "ABCDEFG" )
+        wh = get_string_size("ABCDEFG")
         
         self.disp_last = 0
         self.disp_line_h = wh[1]
-        self.disp_lines = ( self.sh - self.title_h ) / self.disp_line_h
+        self.disp_lines = (self.sh - self.title_h) / self.disp_line_h
 
         self.cursor_mode = cursor
         
-        self.set_list ( list , pos )
+        self.set_list(list, pos)
         
-        self.result = -1
+        self.result = CANCEL
         
 
-    def set_list( self , list , pos = 0 ):
+    def set_list(self, list, pos = 0):
     
         self.list = list
-        self.listlen = len ( list )
-        self.set_pos( pos )
+        self.listlen = len(list)
+        self.set_pos(pos)
         
         self.dispbuf = []
-        for i in range( self.disp_lines ):
-            self.dispbuf.append( None )
+        for i in range(self.disp_lines):
+            self.dispbuf.append(None)
             
-        self.buf = range( self.disp_lines )
+        self.buf = range(self.disp_lines)
         self.bufpos = 0 - self.disp_lines
         self.bottom_line = 0
         self.bottom_step = 0
@@ -584,14 +661,14 @@ class dgUIlist( dgUI ):
         self.render_current()
 
 
-    def set_pos ( self , pos ):
+    def set_pos(self, pos):
 
         # scroll position        
         max = self.listlen - 1
         if max < 0:
             max = 0
 
-        self.pos = dgCount ( pos = pos , max = max , loop = False )
+        self.pos = dgCount(pos = pos, max = max, loop = False)
 
         # cursor limit
         max = self.disp_lines - 1
@@ -599,12 +676,12 @@ class dgUIlist( dgUI ):
         if self.listlen - 1 < max:
             max = self.listlen - 1
 
-        self.cursor = dgCount ( pos = 0 , max = max , loop = False )
+        self.cursor = dgCount(pos = 0, max = max, loop = False)
 
         self.top_step = 0
 
 
-    def keydown( self , e ):
+    def keydown(self, e):
         self.update = True
 
         if e.key == SELECT or e.key == B:
@@ -621,7 +698,7 @@ class dgUIlist( dgUI ):
             return True
 
 
-    def scroll_prev( self ):
+    def scroll_prev(self):
         if self.cursor_mode:
             if not self.cursor.dec():
                 self.render_current()
@@ -637,7 +714,7 @@ class dgUIlist( dgUI ):
 
         self.render_current()
         
-    def scroll_next( self ):
+    def scroll_next(self):
     
         if self.cursor_mode:
             if not self.cursor.inc():
@@ -669,7 +746,7 @@ class dgUIlist( dgUI ):
         self.render_current()
     
 
-    def render_current( self ):
+    def render_current(self):
     
         c    = self.conf["color"]["textcolor"]
         cs   = self.conf["color"]["shadow"]
@@ -746,14 +823,14 @@ class dgUIlist( dgUI ):
        
     
     
-    def read_buf ( self , i ):
+    def read_buf(self, i):
         if i < 0 or i >= len( self.buf ):
             return None
         
         return self.buf[i]
 
     
-    def draw( self ):
+    def draw(self):
         sw = self.sw
         sh = self.sh
 
@@ -762,9 +839,9 @@ class dgUIlist( dgUI ):
         x = 0
         y = 10
         
-        for i in range( self.disp_lines ):
+        for i in range(self.disp_lines):
         
-            line = self.dispbuf[ i ]
+            line = self.dispbuf[i]
         
             if line is not None:
 
@@ -777,8 +854,8 @@ class dgUIlist( dgUI ):
 # class for test routines
 #
 
-class dgUItest( dgUI ):
-    def draw( self ):
+class dgUITest(dgUI):
+    def draw(self):
         sw = self.sw
         sh = self.sh
         
@@ -787,12 +864,44 @@ class dgUItest( dgUI ):
         
         self.base_screen()
         self.draw_string(
-            "WELCOME TO dgtk!!", sw / 2, sh / 2,
+            "WELCOME TO DGTK!!", sw / 2, sh / 2,
             c, cs, True, shadow = self.shadow)
 
         self.draw_string(
             "LARGE!!", sw / 2, sh - (sh / 4),
             c, cs, True, name="l", shadow=self.shadow)
+
+class dgUITestDraw(dgUI):
+    def draw(self):
+        sw = self.sw
+        sh = self.sh
+        
+        c = self.conf["color"]["textcolor"]
+        cs = self.conf["color"]["shadow"]
+        
+        self.base_screen()
+
+        # draw 4x4 boxes
+        
+        idx = 0
+        
+        sx = (sw / 4)
+        sy = (sh / 4)
+        w = (sw / 4) * 0.7
+        h = (sh / 4) * 0.7
+        
+        bx = (sx - w) / 2
+        by = (sy - h) / 2
+        y = by
+        for j in range(4):
+            x = bx
+            for i in range(4):
+                self.draw_box(x, y, w, h, c, cs, "%d" % idx)
+                idx = idx + 1
+                x = x + sx
+
+            y = y + sy
+    
 
 #
 # main for test
@@ -805,24 +914,48 @@ if __name__=='__main__':
 
     init( pygame.display.set_mode([320,240]) )
 
-    ui = dgUItest(screen,  "DGTK UI TEST ver 1.0")
+    ui = dgUITest(screen, "DGTK UI TEST ver 1.1")
     ui.loop()
     
     
-    ui = dgUIChoose(screen, "ARE YOU OK?", ("YES", "NO", "CANCEL"))
+    ui = dgUITestDraw(screen, "DRAWING BOXES")
+    ui.loop()
+
+    size = ["SHORT","TALL","GRANDE","VENTI"]
+    
+    ui = dgUIChoose(screen, "WHICH SIZE DO YOU LIKE?",size)
     ui.loop()
     
-    print "result = %d" % ui.result
+    if ui.result >= 0:
+        ui = dgUIAlert(screen, "RESULT = %s" % size[ui.result])
+        ui.loop()
+    
+    
+    
+    ui = dgUIYesNoChoose(screen, "DO YOU LIKE SUSHI?")
+    ui.loop()
+    
+    ui = dgUIAlert(screen, "RESULT = %d" % ui.result)
+    ui.loop()
+
+    ui = dgUIOKChoose(screen, "OK?!")
+    ui.loop()
+    
+    ui = dgUIChoose(screen, "RESULT = %d" % ui.result, ["OK"])
+    ui.loop()
+
+
     
     list = []
     for i in range(50):
         list.append("%04d : FILE%04d.txt" % ( i , i ) )
     
-    ui = dgUIlist(screen, list, cursor=False)
+    ui = dgUIList(screen, list, cursor=False)
     ui.loop()
-  
-    print "result = %d" % ui.result
-    
+
+    ui = dgUIChoose(screen, "INDEX = %d" % ui.result, ["OK"])
+    ui.loop()
+
 
     
 

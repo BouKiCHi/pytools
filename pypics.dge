@@ -1,0 +1,285 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# pyPICS Copyright (C) 2013 by BouKiCHi
+#
+# This is an example of dgTK usage.
+# Ofcouse you can use as an application.
+#
+#
+# The code is provided under the MIT License
+#
+# Please see the below URL for the detail
+# http://opensource.org/licenses/mit-license.php
+#
+
+
+import os
+import sys
+import pygame
+import dgtk
+import codecs
+import dircache
+
+#
+# pyPICView class
+#
+class pyPICView(dgtk.dgUI):
+
+    def __init__(self, scrn, file, appname = "LIST"):
+        dgtk.dgUI.__init__(self, scrn, appname)
+            
+        self.file = file
+        image = pygame.image.load(file)
+
+        self.ratio_idx = 0
+        self.ratio = [1, 0.5, 2, 4]
+        
+        self.orig = image
+        
+        self.calc_image()
+
+    
+    def calc_image(self):
+    
+        ratio = self.ratio[self.ratio_idx];
+        
+        self.pw, self.ph = self.orig.get_size()
+        
+        if ratio == 1:
+            self.disp = self.orig
+        else:
+            self.pw = int(self.pw * ratio)
+            self.ph = int(self.ph * ratio)
+
+            self.disp = pygame.transform.scale(self.orig,(self.pw,self.ph))
+
+        self.x = dgtk.dgCount(0, max = self.pw)
+        self.y = dgtk.dgCount(0, max = self.ph)
+
+
+
+    def draw(self):
+        sw = self.sw
+        sh = self.sh
+
+        self.scrn.fill((0,0,0))
+        
+        self.draw_image(self.disp, 0 - self.x.pos, 0 - self.y.pos)
+
+    def keydown(self, e):
+        self.update = True
+        step = 16
+
+        if e.key == dgtk.SELECT or e.key == dgtk.B:
+            return True
+        
+        if e.key == dgtk.UP:
+            self.y.sub(step)
+            
+        if e.key == dgtk.LEFT:
+            self.x.sub(step)
+
+        if e.key == dgtk.RIGHT:
+            self.x.add(step)
+
+        if e.key == dgtk.DOWN:
+            self.y.add(step)
+            
+        if e.key == dgtk.START:
+            self.ratio_idx += 1
+            if self.ratio_idx >= len(self.ratio):
+                self.ratio_idx = 0
+    
+            self.calc_image()
+
+        return False
+
+
+
+
+
+#
+# pyPICList class
+#
+class pyPICList(dgtk.dgUI):
+    def __init__(self, scrn, cwd, list, pos = 0, appname = "LIST"):
+        dgtk.dgUI.__init__(self, scrn, appname)
+
+        self.result = dgtk.CANCEL
+        self.cwd = cwd
+        self.list = list
+        self.list_len = len(list)
+        self.imgbuf = [None] * self.list_len
+
+        self.pos = dgtk.dgCount(pos = pos, max = (self.list_len - 12))
+        
+        max = 15
+        if self.list_len < max:
+            max = self.list_len - 1
+        self.cursor = dgtk.dgCount(pos = 0, max = max)
+
+    def keydown(self, e):
+        self.update = True
+
+        if e.key == dgtk.SELECT or e.key == dgtk.B:
+            return True
+        
+        if e.key == dgtk.UP:
+            if self.cursor.sub(4):
+                self.pos.sub(4)
+
+        if e.key == dgtk.LEFT:
+            if self.cursor.dec():
+                self.pos.sub(4)
+
+        if e.key == dgtk.RIGHT:
+            if self.cursor.inc():
+                self.pos.add(4)
+
+        if e.key == dgtk.DOWN:
+            if self.cursor.add(4):
+                self.pos.add(4)
+
+        curmax = self.list_len - self.pos.pos - 1
+        if curmax > 15:
+            curmax = 15
+
+        self.cursor.set_max(curmax)
+
+        # print "%d %d" % (self.cursor.pos, self.pos.pos)
+
+        if e.key == dgtk.START or e.key == dgtk.A:
+            self.result = self.pos.pos + self.cursor.pos
+            return True
+
+    def get_image(self, dir, name, bw, bh):
+        if is_readable_pic(name):
+            path = os.path.join(dir,name)
+            image = pygame.image.load(path)
+            image = pygame.transform.scale(image,(int(bw),int(bh)))
+            
+            return image
+            
+        return None
+    
+    def draw(self):
+        sw = self.sw
+        sh = self.sh
+
+        sel = self.conf["color"]["select"]
+        c = self.conf["color"]["textcolor"]
+        cs = self.conf["color"]["shadow"]
+        
+        self.base_screen()
+
+        # draw 4x4 boxes
+        
+        idx = self.pos.pos
+        
+        sx = (sw / 4)
+        sy = (sh / 4)
+        bw = (sw / 4) * 0.7
+        bh = (sh / 4) * 0.7
+        
+        bx = (sx - bw) / 2
+        by = (sy - bh) / 2
+        y = by
+        for j in range(4):
+            x = bx
+            for i in range(4):
+                if idx  < self.list_len:
+                    data = self.list[idx]
+
+                    img = self.imgbuf[idx]
+                    if not img:
+                        img = self.get_image(self.cwd, data, bw, bh)
+                        self.imgbuf[idx] = img
+                    
+                    if len(data) > 8:
+                        if data[-1]=='/':
+                            data = data[0:8] + "../"
+                        else:
+                            data = data[0:8] + "..."
+                
+                    if img:
+                        self.draw_image(img, x, y)
+
+                    if idx == self.cursor.pos + self.pos.pos:
+                        self.draw_box(x, y, bw, bh, sel, cs, data)
+                    else:
+                        self.draw_box(x, y, bw, bh, c, cs, data)
+            
+                idx = idx + 1
+                x = x + sx
+
+            y = y + sy
+
+def is_readable_pic(name):
+        ext = os.path.splitext(name)[1].lower()
+        if ext == ".png" or ext == ".jpg":
+            return True
+
+        return False
+    
+
+def read_dir(cwd):
+    imglist = []
+    dirlist = [".."] + dircache.listdir(u"%s" % cwd)
+    dircache.annotate(cwd, dirlist)
+    
+    return dirlist
+
+def disp_pict(scrn, file):
+    ui = pyPICView(scrn, file)
+    ui.loop()
+       
+
+def loop_pict():
+    cwd = os.getcwd()
+
+    dirlist = read_dir(cwd)
+    
+    caption = "CHOOSE PICTURE"
+    
+    while True:
+        ui = pyPICList(screen, cwd, dirlist, 0, "%s [%s]" % (caption,cwd))
+        ui.loop()
+
+        sel = None
+        if ui.result >= 0:
+            sel = dirlist[ui.result]
+            
+            if sel[-1] == '/':
+                newpath = os.path.join(cwd, sel[0:-1])
+                newpath = os.path.normpath(newpath)
+                cwd = newpath
+                dirlist = read_dir(cwd)
+            else:
+                if is_readable_pic(sel):
+                    file = os.path.normpath(os.path.join(cwd, sel))
+                    disp_pict(screen, file)
+        else:
+            break
+
+
+if __name__=='__main__':
+
+    pygame.init()
+    pygame.mouse.set_visible(False)
+
+    screen = pygame.display.set_mode([320,240])
+
+    dgtk.init(screen)
+
+    loop_pict()
+    
+
+
+
+
+    
+
+
+
+

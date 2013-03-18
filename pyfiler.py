@@ -3,6 +3,8 @@
 #
 # pyFILER Copyright (C) 2012 by BouKiCHi
 #
+# This is a subclass of dgTK
+#
 # The code is provided under the MIT License
 #
 # Please see the below URL for the detail
@@ -14,15 +16,13 @@ import pygame
 import dgtk
 import dircache
 
-
-
-class dgUIfiler(dgtk.dgUIlist):
+class dgUIFiler(dgtk.dgUIList):
 
 
     def __init__ (self, screen, cwd="/", caption="CHOOSE FILE"):
         self.name = caption
         self.load_dir(cwd)
-        dgtk.dgUIlist.__init__(self, screen, self.dirlist, appname=caption)
+        dgtk.dgUIList.__init__(self, screen, self.dirlist, appname=caption)
         
         self.set_caption(" %s : [%s]" % (self.name, cwd))
         self.result = None
@@ -65,13 +65,13 @@ class dgUIfiler(dgtk.dgUIlist):
             return False
                 
         else:
-            return dgtk.dgUIlist.keydown(self, e)
+            return dgtk.dgUIList.keydown(self, e)
 
 #
 # main for test
 #
 if __name__=='__main__':
-    fontfile = "fonts/DroidSansFallback.ttf"
+    fontfile = "DroidSansFallback.ttf"
 
     pygame.init()
     pygame.mouse.set_visible(False)
@@ -81,7 +81,7 @@ if __name__=='__main__':
     dgtk.init(screen)
     dgtk.load_font("m", fontfile, 12)
 
-    ui = dgUIfiler(screen, os.getcwd(), "pyFILER 1.0")
+    ui = dgUIFiler(screen, os.getcwd(), "pyFILER 1.0")
     ui.loop()
 
     print "result = %s" % ui.result
